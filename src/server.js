@@ -7,40 +7,43 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  transports: ['websocket', 'polling']
 });
 
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Route: skapa nytt rum
-app.get('/skapa', (req, res) => {
+// Debug-route för att kolla rum
+app.get('/debug/rooms', (req, res) => {
+  const roomList = Object.keys(rooms).map(id => ({
+    id,
+    players: rooms[id].players.map(p => p.name),
+    status: rooms[id].status
+  }));
+  res.json({ rooms: roomList, count: roomList.length });
+});
+
+// Catch-all route
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
-// Route: gå med i rum
-app.get('/rum/:roomId', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
-// ── Speldata i minnet ────────────────────────────────────────────
-const rooms = {}; // roomId → RoomState
+const rooms = {};
 
 function createRoom(roomId, hostSocketId) {
   return {
     id: roomId,
     hostSocketId,
-    players: [],       // { id, name, socketId, ready }
-    status: 'lobby',   // lobby | playing | finished
+    players: [],
+    status: 'lobby',
     maxCards: 10,
     createdAt: Date.now()
   };
 }
 
-// ── Socket.io events ─────────────────────────────────────────────
 io.on('connection', (socket) => {
   console.log('Ansluten:', socket.id);
 
-  // Värden skapar ett nytt rum
   socket.on('create_room', ({ playerName, maxCards }, callback) => {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
     const room = createRoom(roomId, socket.id);
@@ -59,16 +62,19 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     socket.roomId = roomId;
 
-    console.log(`Rum ${roomId} skapat av ${playerName}`);
+    console.log(`Rum ${roomId} skapat av ${playerName}. Totalt rum: ${Object.keys(rooms).length}`);
     callback({ success: true, roomId, player });
     io.to(roomId).emit('room_update', sanitizeRoom(room));
   });
 
-  // Spelare går med i rum via inbjudningslänk
   socket.on('join_room', ({ roomId, playerName }, callback) => {
-    const room = rooms[roomId];
+    const cleanRoomId = roomId.trim().toUpperCase();
+    console.log(`join_room försök: ${cleanRoomId}, tillgängliga rum: ${Object.keys(rooms).join(', ')}`);
+    
+    const room = rooms[cleanRoomId];
 
     if (!room) {
+      console.log(`Rum ${cleanRoomId} hittades inte!`);
       return callback({ success: false, error: 'Rummet hittades inte.' });
     }
     if (room.status !== 'lobby') {
@@ -94,19 +100,17 @@ io.on('connection', (socket) => {
     };
     room.players.push(player);
 
-    socket.join(roomId);
-    socket.roomId = roomId;
+    socket.join(cleanRoomId);
+    socket.roomId = cleanRoomId;
 
-    console.log(`${playerName} gick med i rum ${roomId}`);
-    callback({ success: true, roomId, player });
-    io.to(roomId).emit('room_update', sanitizeRoom(room));
+    console.log(`${playerName} gick med i rum ${cleanRoomId}`);
+    callback({ success: true, roomId: cleanRoomId, player });
+    io.to(cleanRoomId).emit('room_update', sanitizeRoom(room));
   });
 
-  // Spelare markerar sig som redo
   socket.on('set_ready', ({ roomId, ready }) => {
     const room = rooms[roomId];
     if (!room) return;
-
     const player = room.players.find(p => p.socketId === socket.id);
     if (player) {
       player.ready = ready;
@@ -114,7 +118,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Värden uppdaterar maxCards
   socket.on('update_settings', ({ roomId, maxCards }) => {
     const room = rooms[roomId];
     if (!room || room.hostSocketId !== socket.id) return;
@@ -122,48 +125,37 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('room_update', sanitizeRoom(room));
   });
 
-  // Värden startar spelet
   socket.on('start_game', ({ roomId }, callback) => {
     const room = rooms[roomId];
     if (!room) return callback({ success: false, error: 'Rum saknas.' });
     if (room.hostSocketId !== socket.id) return callback({ success: false, error: 'Bara värden kan starta.' });
     if (room.players.length < 2) return callback({ success: false, error: 'Minst 2 spelare krävs.' });
-
     const notReady = room.players.filter(p => !p.ready);
-    if (notReady.length > 0) {
-      return callback({ success: false, error: 'Alla spelare är inte redo.' });
-    }
+    if (notReady.length > 0) return callback({ success: false, error: 'Alla spelare är inte redo.' });
 
     room.status = 'playing';
-    console.log(`Spelet startar i rum ${roomId}`);
     callback({ success: true });
     io.to(roomId).emit('game_starting', sanitizeRoom(room));
   });
 
-  // Spelare kopplar från
   socket.on('disconnect', () => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
-
     const room = rooms[roomId];
     room.players = room.players.filter(p => p.socketId !== socket.id);
-
     if (room.players.length === 0) {
       delete rooms[roomId];
-      console.log(`Rum ${roomId} borttaget (tomt)`);
     } else {
-      // Om värden lämnar → nästa spelare blir värd
-      if (room.hostSocketId === socket.id && room.players.length > 0) {
+      if (room.hostSocketId === socket.id) {
         room.players[0].isHost = true;
         room.hostSocketId = room.players[0].socketId;
       }
       io.to(roomId).emit('room_update', sanitizeRoom(room));
-      io.to(roomId).emit('player_left', { name: socket.playerName || 'En spelare' });
+      io.to(roomId).emit('player_left', { name: 'En spelare' });
     }
   });
 });
 
-// Ta bort känslig info innan vi skickar till klienter
 function sanitizeRoom(room) {
   return {
     id: room.id,
@@ -179,12 +171,6 @@ function sanitizeRoom(room) {
   };
 }
 
-// Catch-all: skicka alltid index.html för okända routes (SPA-routing)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
-// Starta servern
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Plump-servern körs på port ${PORT}`);
