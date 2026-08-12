@@ -784,6 +784,10 @@ socket.on('cards_dealt', (data) => {
 });
 
 socket.on('bidding_started', (data) => {
+  console.log('firstBidder:', data.firstBidder);
+  console.log('myId:', G.myId);
+  console.log('socket.id:', socket.id);
+  console.log('players:', JSON.stringify(G.players));
   G.biddingOrder = data.biddingOrder;
   G.currentBidder = data.firstBidder;
   G.currentBidderName = data.firstBidderName || G.players.find(p => p.id === data.firstBidder || p.socketId === data.firstBidder)?.name || '';
@@ -791,7 +795,6 @@ socket.on('bidding_started', (data) => {
   if (data.playerNames) Object.assign(G.nameCache, data.playerNames);
   G.isOneCardRound = data.isOneCardRound;
   G.numCards = data.numCards;
-
   updateBidderStatus();
 });
 
