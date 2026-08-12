@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Plump – Spela</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --felt:    #1a4a2e;
+      --felt-dk: #0f2e1c;
+      --felt-lt: #255a38;
+      --card-bg: #fafaf8;
+      --card-border: #ddd;
+      --red:     #c0392b;
+      --black:   #1a1a1a;
+      --gold:    #d4af37;
+      --gold-lt: #f0d060;
+      --muted:   #6b8c7a;
+      --f-display: 'Playfair Display', serif;
+      --f-body: 'Inter', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--f-body);
+      background: var(--felt-dk);
+      min-height: 100dvh;
+      color: #fff;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    /* ── Spelplan ── */
+    #game-area {
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+      padding: 8px;
+      gap: 8px;
+    }
+
+    /* ── Topbar ── */
+    #topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      font-size: 13px;
+    }
+
+    #round-info { color: var(--gold); font-weight: 700; font-family: var(--f-display); font-size: 15px; }
+    #dealer-info { color: var(--muted); font-size: 12px; }
+
+    /* ── Motspelarna (övre del) ── */
+    #opponents-area {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+    }
+
+    .opponent-card {
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 8px 12px;
+      min-width: 80px;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .opponent-name { font-weight: 600; color: #fff; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+    .opponent-bid { color: var(--gold); font-size: 11px; }
+    .opponent-tricks { color: var(--muted); font-size: 11px; }
+    .opponent-cards { display: flex; gap: -4px; justify-content: center; margin-top: 4px; }
+
+    .mini-card {
+      width: 16px;
+      height: 24px;
+      background: var(--card-bg);
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      margin-left: -4px;
+    }
+
+    .mini-card:first-child { margin-left: 0; }
+
+    /* ── Spelbordet (mitten) ── */
+    #table-area {
+      flex: 1;
+      background: var(--felt);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      gap: 12px;
+      min-height: 200px;
+      position: relative;
+      border: 2px solid rgba(255,255,255,0.05);
+    }
+
+    /* ── Aktiva kort på bordet ── */
+    #trick-area {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .trick-card-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .trick-player-name {
+      font-size: 10px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* ── Spelkort ── */
+    .playing-card {
+      width: 56px;
+      height: 84px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 4px;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      position: relative;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .playing-card:active { transform: translateY(-4px); }
+    .playing-card.selected { transform: translateY(-12px); box-shadow: 0 8px 20px rgba(212,175,55,0.5); border-color: var(--gold); }
+    .playing-card.disabled { opacity: 0.5; cursor: not-allowed; }
+    .playing-card.not-my-turn { cursor: default; }
+
+    .playing-card.red { color: var(--red); }
+    .playing-card.black { color: var(--black); }
+
+    .card-corner-top { font-size: 13px; font-weight: 700; line-height: 1; }
+    .card-corner-top .suit { font-size: 11px; }
+    .card-center { font-size: 22px; text-align: center; line-height: 1; }
+    .card-corner-bot { font-size: 13px; font-weight: 700; line-height: 1; transform: rotate(180deg); text-align: left; }
+    .card-corner-bot .suit { font-size: 11px; }
+
+    /* Kortbaksida */
+    .playing-card.face-down {
+      background: linear-gradient(135deg, #1a3a8a, #0d2060);
+      border-color: #2a4ab0;
+      cursor: default;
+    }
+
+    .playing-card.face-down::after {
+      content: '🂠';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      opacity: 0.3;
+    }
+
+    /* ── Spelarens hand (nedredelens) ── */
+    #my-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #my-info {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      align-items: center;
+    }
+
+    #my-name { font-weight: 700; color: var(--gold); }
+    #my-bid-info { color: var(--muted); }
+    #my-tricks-info { color: #fff; }
+
+    #my-hand {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    /* ── Actionpanel ── */
+    #action-panel {
+      background: rgba(0,0,0,0.4);
+      border-radius: 12px;
+      padding: 16px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    #action-title {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* ── Knappar ── */
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 999px;
+      font-family: var(--f-body);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+      -webkit-appearance: none;
+    }
+
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-lt)); color: var(--felt-dk); }
+    .btn-green { background: linear-gradient(135deg, #27ae60, #2ecc71); color: #fff; }
+    .btn-muted { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+
+    .btn + .btn { margin-left: 8px; }
+
+    /* ── Budgivning ── */
+    #bid-select {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--gold);
+      border-radius: 8px;
+      color: var(--gold);
+      font-size: 18px;
+      font-weight: 700;
+      padding: 8px 16px;
+      margin-bottom: 12px;
+      width: 100px;
+      text-align: center;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    /* ── Statusmeddelanden ── */
+    #status-msg {
+      text-align: center;
+      font-size: 14px;
+      color: var(--gold);
+      font-weight: 600;
+      padding: 8px;
+      min-height: 36px;
+    }
+
+    /* ── Animationer ── */
+    @keyframes shuffleLeft {
+      0%   { transform: translateX(0) rotate(0deg); }
+      25%  { transform: translateX(-20px) rotate(-8deg); }
+      75%  { transform: translateX(20px) rotate(8deg); }
+      100% { transform: translateX(0) rotate(0deg); }
+    }
+    @keyframes cutTop {
+      0%   { transform: translateY(0); }
+      50%  { transform: translateY(-30px); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes confettiFall {
+      0%   { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+    }
+    .shuffle-anim { animation: shuffleLeft 0.15s ease-in-out 5; }
+    .cut-anim-top { animation: cutTop 0.4s ease-in-out; }
+    @keyframes dealCard {
+      from { opacity: 0; transform: scale(0.5) translateY(-40px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    @keyframes shuffle {
+      0%   { transform: translateX(0) rotate(0deg); }
+      25%  { transform: translateX(-8px) rotate(-3deg); }
+      75%  { transform: translateX(8px) rotate(3deg); }
+      100% { transform: translateX(0) rotate(0deg); }
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .deal-anim { animation: dealCard 0.3s ease-out both; }
+    .shuffle-anim { animation: shuffle 0.2s ease-in-out 3; }
+    .slide-in { animation: slideIn 0.3s ease-out both; }
+
+    /* ── Kortbuntanimation ── */
+    #deck-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
+      margin: 8px 0;
+    }
+
+    .deck-card {
+      width: 56px;
+      height: 84px;
+      background: linear-gradient(135deg, #1a3a8a, #0d2060);
+      border: 1px solid #2a4ab0;
+      border-radius: 8px;
+      position: absolute;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+
+    #deck-stack {
+      position: relative;
+      width: 56px;
+      height: 84px;
+    }
+
+    /* ── Scorekort ── */
+    #scoreboard {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 50;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    #scoreboard.show { display: block; }
+
+    .score-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+
+    .score-table th {
+      background: rgba(212,175,55,0.2);
+      color: var(--gold);
+      padding: 8px 6px;
+      text-align: center;
+      font-size: 11px;
+      border-bottom: 1px solid rgba(212,175,55,0.3);
+    }
+
+    .score-table td {
+      padding: 6px 4px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .plump-cell {
+      background: #1a1a1a;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: auto;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .success-cell { color: #2ecc71; font-weight: 700; }
+    .total-row { background: rgba(212,175,55,0.1); font-weight: 700; color: var(--gold); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(15,46,28,0.95);
+      border: 1px solid var(--gold);
+      border-radius: 999px;
+      color: var(--gold);
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 100;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Omgångsresultat overlay ── */
+    #round-result {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 40;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #round-result.show { display: flex; }
+
+    .result-box {
+      background: var(--felt);
+      border: 1px solid rgba(212,175,55,0.3);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .result-title {
+      font-family: var(--f-display);
+      font-size: 22px;
+      color: var(--gold);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 14px;
+    }
+
+    .result-row:last-child { border-bottom: none; }
+    .result-name { font-weight: 600; }
+    .result-bid { color: var(--muted); }
+    .result-points { font-weight: 700; }
+    .result-points.success { color: #2ecc71; }
+    .result-points.plump { color: var(--red); }
+  </style>
+</head>
+<body>
+<div id="game-area">
+
+  <!-- Topbar -->
+  <div id="topbar">
+    <span id="round-info">Omgång –</span>
+    <span id="dealer-info">Givare: –</span>
+    <button class="btn btn-muted" style="padding:6px 12px;font-size:12px" onclick="toggleScoreboard()">Poäng 📊</button>
+    <button class="btn btn-muted" style="padding:6px 12px;font-size:12px" onclick="toggleRules()">Regler ❓</button>
+  </div>
+
+  <!-- Motspelarna -->
+  <div id="opponents-area"></div>
+
+  <!-- Spelbordet -->
+  <div id="table-area">
+    <div id="status-msg">Väntar på givaren…</div>
+    <div id="trick-area"></div>
+    <div id="action-panel" style="display:none">
+      <div id="action-title"></div>
+      <div id="action-content"></div>
+    </div>
+  </div>
+
+  <!-- Min hand -->
+  <div id="my-area">
+    <div id="my-info">
+      <span id="my-name"></span>
+      <span id="my-bid-info"></span>
+      <span id="my-tricks-info"></span>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:6px;justify-content:center">
+    <button onclick="sortHand('auto')" style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:12px;cursor:pointer">♠♥♦♣ Sortera</button>
+    <button onclick="sortHand('reset')" style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:12px;cursor:pointer">↺ Återställ</button>
+  </div>
+  <div id="my-hand"></div>
+  </div>
+
+</div>
+
+<!-- Scoreboard -->
+<div id="scoreboard">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="font-family:var(--f-display);color:var(--gold)">Poängställning</h2>
+    <button class="btn btn-muted" style="padding:6px 14px" onclick="toggleScoreboard()">Stäng</button>
+  </div>
+  <div id="scoreboard-content"></div>
+</div>
+
+<!-- Omgångsresultat -->
+<div id="round-result">
+  <div class="result-box">
+    <div class="result-title" id="result-title">Omgången slut!</div>
+    <div id="result-rows"></div>
+    <button class="btn btn-gold" style="width:100%;margin-top:16px" onclick="closeRoundResult()">Nästa omgång</button>
+  </div>
+</div>
+
+<!-- Vinnarskärm -->
+<div id="winner-screen" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:60;align-items:center;justify-content:center;padding:24px">
+  <div style="text-align:center;max-width:360px;width:100%">
+    <div style="font-size:64px;margin-bottom:16px">🏆</div>
+    <h1 style="font-family:var(--f-display);font-size:32px;color:var(--gold);margin-bottom:8px" id="winner-name"></h1>
+    <p style="color:var(--muted);font-size:16px;margin-bottom:24px" id="winner-score"></p>
+    <p id="winner-quote" style="color:var(--muted);font-size:13px;font-style:italic;margin-bottom:16px;line-height:1.5"></p>
+    <div id="final-scores" style="background:rgba(255,255,255,0.05);border-radius:12px;padding:16px;margin-bottom:24px"></div>
+    <button class="btn btn-gold" style="width:100%;font-size:17px" onclick="playAgain()">🃏 Spela igen!</button>
+  </div>
+</div>
+
+<!-- Regler -->
+<div id="rules-panel" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:55;overflow-y:auto;padding:16px">
+  <div style="max-width:420px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-family:var(--f-display);color:var(--gold);font-size:24px">Regler 🃏</h2>
+      <button class="btn btn-muted" style="padding:6px 14px" onclick="toggleRules()">Stäng</button>
+    </div>
+    <div style="color:#fff;font-size:14px;line-height:1.7;display:flex;flex-direction:column;gap:14px">
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">🎯 Mål</div>
+        Gissa exakt hur många stick du tar i varje omgång. Varken fler eller färre!
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">📋 Poäng</div>
+        <b>Lyckas:</b> 10 + antal stick du tog<br>
+        <b>Tar alla stick:</b> antal stick + 0 (t.ex. 4 stick = 40 poäng!)<br>
+        <b>Plumpar:</b> 0 poäng, svart cirkel i scorekortet
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">🔄 Omgångar</div>
+        Korten börjar på max, går ned till 1-kortsomgångar och sedan upp igen.<br>
+        Antal 1-kortsomgångar = antal spelare.
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">🃏 Spelregler</div>
+        Du måste följa den inledande färgen om du har ett sådant kort.<br>
+        Saknar du färgen spelar du vilket kort som helst ("sakar").<br>
+        Högsta kortet i den inledande färgen vinner sticket.
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">🚫 Förbjudna bud</div>
+        Siste spelaren att bjuda får inte göra summan lika med omgångens kortantal.<br>
+        Du får inte bjuda 0 tre omgångar i rad med lyckat resultat.<br>
+        Regeln om 0-bud gäller ej under 1-kortsomgångarna.
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px">
+        <div style="color:var(--gold);font-weight:700;margin-bottom:6px">🎴 1-kortsomgångar</div>
+        Ingen ser sitt kort! Du bjuder 0 eller 1 helt blint.<br>
+        Klicka på kortbaksidan för att spela ditt kort när det är din tur.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Återanslutning -->
+<div id="reconnect-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:70;align-items:center;justify-content:center;padding:24px">
+  <div style="text-align:center;max-width:320px">
+    <div style="font-size:48px;margin-bottom:16px">📡</div>
+    <h2 style="font-family:var(--f-display);color:var(--gold);margin-bottom:8px">Anslutningen bröts</h2>
+    <p style="color:var(--muted);margin-bottom:24px">Försöker återansluta till spelet...</p>
+    <div id="reconnect-status" style="color:#fff;margin-bottom:16px"></div>
+    <button class="btn btn-gold" style="width:100%" onclick="manualReconnect()">🔄 Återanslut</button>
+    <button class="btn btn-muted" style="width:100%;margin-top:10px" onclick="window.location.href='/'">🏠 Tillbaka till lobbyn</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ── Tillstånd ────────────────────────────────────────
+const G = {
+  socket: null,
+  roomId: null,
+  myId: null,
+  myName: null,
+  players: [],
+  nameCache: {}, // socketId -> name
+  dealer: null,
+  hand: [],
+  bids: {},
+  tricks: {},
+  roundIndex: 0,
+  totalRounds: 0,
+  numCards: 0,
+  isOneCardRound: false,
+  biddingOrder: [],
+  playOrder: [],
+  currentBidder: null,
+  currentPlayer: null,
+  selectedCard: null,
+  scores: [],
+  phase: 'waiting' // waiting | shuffling | bidding | playing
+};
+
+// ── Init ─────────────────────────────────────────────
+const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
+G.socket = socket;
+
+// Hämta speldata från sessionStorage
+const savedState = JSON.parse(sessionStorage.getItem('plumpState') || '{}');
+G.roomId = savedState.roomId;
+G.myId = savedState.myId;
+G.myName = savedState.myName;
+G.players = savedState.players || [];
+G.dealer = savedState.dealer;
+
+if (!G.roomId) {
+  window.location.href = '/';
+}
+
+document.getElementById('my-name').textContent = G.myName || '';
+
+socket.on('disconnect', () => {
+  console.log('Frånkopplad!');
+  document.getElementById('reconnect-overlay').style.display = 'flex';
+  document.getElementById('reconnect-status').textContent = 'Försöker återansluta...';
+});
+
+socket.on('reconnect', (attemptNumber) => {
+  console.log('Återansluten efter', attemptNumber, 'försök');
+  document.getElementById('reconnect-status').textContent = 'Återansluten! Laddar spelet...';
+  // Rejoin sker automatiskt i connect-handlern
+});
+
+socket.on('connect_error', () => {
+  document.getElementById('reconnect-status').textContent = 'Kunde inte ansluta. Försöker igen...';
+});
+
+function manualReconnect() {
+  document.getElementById('reconnect-status').textContent = 'Försöker ansluta...';
+  socket.connect();
+}
+
+socket.on('connect', () => {
+  console.log('Spelvy ansluten:', socket.id);
+  
+  // Återanslut till pågående spel
+  socket.emit('rejoin_game', { roomId: G.roomId, playerName: G.myName }, (res) => {
+    if (!res.success) {
+      console.error('Kunde inte återansluta:', res.error);
+      showToast('Kunde inte ansluta till spelet');
+      return;
+    }
+
+    // Återställ spelläget
+    G.players = res.room.players;
+    buildNameCache();
+    document.getElementById('reconnect-overlay').style.display = 'none';
+    G.dealer = res.currentDealer;
+    G.dealerName = res.room.currentDealerName || '';
+    G.hand = res.hand || [];
+    G.bids = res.bids || {};
+    G.tricks = res.tricks || {};
+    G.roundIndex = res.roundIndex || 0;
+    G.totalRounds = res.totalRounds || 0;
+    G.numCards = res.numCards || 0;
+    G.myId = socket.id;
+
+    // Uppdatera UI
+    updateTopbar();
+    updateMyInfo();
+    renderOpponents();
+
+    const phase = res.phase;
+    const isDealer = G.dealerName === G.myName;
+
+    if (phase === 'unshuffled' || phase === 'shuffled' || phase === 'cut') {
+      G.phase = 'shuffling';
+      if (isDealer) {
+        if (phase === 'unshuffled') showDealerActions();
+        else if (phase === 'shuffled') showAfterShuffleActions();
+        else if (phase === 'cut') showDealButton();
+      } else {
+        const dealerName = G.players.find(p => p.id === G.dealer)?.name || 'Givaren';
+        setStatus(`${dealerName} håller på att blanda korten…`);
+      }
+    } else if (phase === 'dealt') {
+      G.phase = 'bidding';
+      renderMyHand(G.numCards === 1);
+      
+      if (Object.keys(G.bids).length < G.players.length) {
+        // Budgivning pågår
+        const biddingOrder = getBiddingOrderFromPlayers();
+        G.biddingOrder = biddingOrder;
+        const nextBidder = biddingOrder.find(id => G.bids[id] === undefined);
+        G.currentBidder = nextBidder;
+        updateBidderStatus();
+      } else {
+        // Spel pågår
+        G.phase = 'playing';
+        updatePlayStatus();
+      }
+    }
+  });
+});
+
+// ── Spellogik events ──────────────────────────────────
+
+socket.on('round_started', (data) => {
+  G.roundIndex = data.roundIndex;
+  buildNameCache();
+  resetHandSort();
+  G.totalRounds = data.totalRounds;
+  G.numCards = data.numCards;
+  G.dealer = data.dealer;
+  G.dealerName = data.dealerName || '';
+  G.bids = {};
+  G.tricks = {};
+  G.hand = [];
+  G.phase = 'shuffling';
+
+  updateTopbar();
+  updateMyInfo();
+  clearTrickArea();
+
+  const dealerPlayer = G.players.find(p => p.id === data.dealer);
+  const isMe = data.dealer === G.myId;
+
+  setStatus(`Omgång ${G.roundIndex + 1} – ${G.numCards} kort var`);
+  renderOpponents();
+
+  if (G.dealerName === G.myName) {
+    showDealerActions();
+  } else {
+    setStatus(`${G.dealerName || 'Givaren'} blandar korten…`);
+    hideActionPanel();
+  }
+});
+
+socket.on('deck_shuffled', (data) => {
+  const dealerName = data.dealerName || G.dealerName || G.players.find(p => p.id === data.dealerId || p.socketId === data.dealerId)?.name || 'Givaren';
+  setStatus(`${dealerName} blandade korten!`);
+
+  if (data.dealerId === G.myId) {
+    showAfterShuffleActions();
+  }
+});
+
+socket.on('deck_cut', (data) => {
+  const dealerName = data.dealerName || G.dealerName || G.players.find(p => p.id === data.dealerId || p.socketId === data.dealerId)?.name || 'Givaren';
+  setStatus(`${dealerName} kuperade korten!`);
+
+  if (data.dealerId === G.myId) {
+    showDealButton();
+  }
+});
+
+socket.on('cards_dealt', (data) => {
+  G.hand = data.hand;
+  G.numCards = data.numCards;
+  G.isOneCardRound = data.isOneCardRound;
+  G.phase = 'bidding';
+
+  hideActionPanel();
+
+  if (data.isOneCardRound) {
+    setStatus('1-kortsomgång – ingen ser sitt kort!');
+    renderMyHand(true); // visa baksida
+  } else {
+    renderMyHand(false);
+    setStatus('Korten är utdelade – budgivning börjar!');
+  }
+
+  renderOpponents();
+});
+
+socket.on('bidding_started', (data) => {
+  G.biddingOrder = data.biddingOrder;
+  G.currentBidder = data.firstBidder;
+  G.currentBidderName = data.firstBidderName || G.players.find(p => p.id === data.firstBidder || p.socketId === data.firstBidder)?.name || '';
+  // Uppdatera namncache från servern
+  if (data.playerNames) Object.assign(G.nameCache, data.playerNames);
+  G.isOneCardRound = data.isOneCardRound;
+  G.numCards = data.numCards;
+
+  updateBidderStatus();
+});
+
+socket.on('bid_placed', (data) => {
+  // Spara budet med både socketId och namn som nyckel
+  G.bids[data.playerId] = data.bid;
+  if (data.playerName) {
+    G.bids[data.playerName] = data.bid; // namn som backup-nyckel
+    G.nameCache[data.playerId] = data.playerName;
+  }
+  renderOpponents();
+
+  if (data.playerId !== G.myId) {
+    showToast(`${data.playerName} bjuder ${data.bid} stick`);
+  }
+});
+
+socket.on('next_bidder', (data) => {
+  G.currentBidder = data.playerId;
+  G.currentBidderName = data.playerName || '';
+  updateBidderStatus();
+});
+
+socket.on('playing_started', (data) => {
+  G.playOrder = data.playOrder;
+  G.currentPlayer = data.firstPlayer;
+  G.currentPlayerName = data.firstPlayerName || '';
+  // Uppdatera namncache från servern
+  if (data.playerNames) Object.assign(G.nameCache, data.playerNames);
+  G.bids = data.bids || {};
+  // Spara även bud med namn som nyckel
+  if (data.playerNames) {
+    Object.entries(data.playerNames).forEach(([socketId, name]) => {
+      if (G.bids[socketId] !== undefined) {
+        G.bids[name] = G.bids[socketId];
+      }
+    });
+  }
+  G.phase = 'playing';
+
+  updatePlayStatus();
+  renderMyHand(G.isOneCardRound);
+  renderOpponents();
+});
+
+socket.on('card_played', (data) => {
+  renderTrickCard(data.playerId, data.playerName, data.card);
+  G.selectedCard = null;
+
+  if (data.playerId !== G.myId) {
+    // Ta bort ett kort från motspelaren visuellt
+    renderOpponents();
+  }
+});
+
+socket.on('next_player', (data) => {
+  G.currentPlayer = data.playerId;
+  G.currentPlayerName = data.playerName || '';
+  updatePlayStatus();
+  renderMyHand(G.isOneCardRound); // re-render so click is enabled/disabled
+});
+
+socket.on('trick_resolved', (data) => {
+  // Spara tricks med både id och namn som nyckel
+  G.tricks = data.tricks || {};
+  // Bygg även namn-baserad tricks-map
+  if (data.playerTricks) {
+    Object.assign(G.tricks, data.playerTricks);
+  }
+  const winnerName = data.winner.playerName || getName(data.winner.playerId) || 'Okänd';
+  showToast(`${winnerName} vann sticket! 🃏`);
+  updateMyInfo();
+  renderOpponents();
+});
+
+socket.on('next_trick', (data) => {
+  G.currentPlayer = data.firstPlayer;
+  G.currentPlayerName = data.firstPlayerName || '';
+  // Uppdatera namncache från servern
+  if (data.playerNames) Object.assign(G.nameCache, data.playerNames);
+  G.tricks = data.tricks;
+
+  setTimeout(() => {
+    clearTrickArea();
+    updatePlayStatus();
+    renderMyHand(G.isOneCardRound);
+    renderOpponents();
+  }, 500);
+});
+
+socket.on('round_resolved', (data) => {
+  G.scores = data.scores;
+  showRoundResult(data.results);
+  renderScoreboard();
+});
+
+socket.on('game_ended', (data) => {
+  renderScoreboard();
+  showWinnerScreen(data);
+});
+
+// ── Render-funktioner ─────────────────────────────────
+
+function renderMyHand(faceDown) {
+  const container = document.getElementById('my-hand');
+  container.innerHTML = '';
+
+  if (faceDown) {
+    // Visa baksida vid 1-kortsomgång - klickbar om det är min tur
+    const card = document.createElement('div');
+    card.className = 'playing-card face-down';
+    if (G.phase === 'playing' && G.currentPlayer === G.myId) {
+      card.style.cursor = 'pointer';
+      card.onclick = () => playCard(0);
+      card.title = 'Klicka för att spela ditt kort';
+      // Visa guldkant när det är ens tur
+      card.style.border = '2px solid var(--gold)';
+      card.style.boxShadow = '0 0 12px rgba(212,175,55,0.5)';
+    }
+    container.appendChild(card);
+    return;
+  }
+
+  G.hand.forEach((card, idx) => {
+    const el = createCardElement(card, idx);
+    el.classList.add('deal-anim');
+    el.style.animationDelay = `${idx * 0.08}s`;
+    container.appendChild(el);
+  });
+}
+
+function createCardElement(card, idx) {
+  const isRed = card.suit === 'hjärter' || card.suit === 'ruter';
+  const suitSymbol = getSuitSymbol(card.suit);
+  const el = document.createElement('div');
+  el.className = `playing-card ${isRed ? 'red' : 'black'}`;
+
+  el.innerHTML = `
+    <div class="card-corner-top">
+      <div>${card.value}</div>
+      <div class="suit">${suitSymbol}</div>
+    </div>
+    <div class="card-center">${suitSymbol}</div>
+    <div class="card-corner-bot">
+      <div>${card.value}</div>
+      <div class="suit">${suitSymbol}</div>
+    </div>
+  `;
+
+  // Klickhantering
+  if (G.phase === 'playing' && G.currentPlayer === G.myId) {
+    el.onclick = () => selectCard(idx, el);
+  } else {
+    el.classList.add('not-my-turn');
+  }
+
+  return el;
+}
+
+function selectCard(idx, el) {
+  if (G.phase !== 'playing' || G.currentPlayer !== G.myId) return;
+
+  // Avmarkera tidigare valt kort
+  document.querySelectorAll('.playing-card.selected').forEach(c => c.classList.remove('selected'));
+
+  if (G.selectedCard === idx) {
+    // Dubbelklick = spela kortet
+    playCard(idx);
+    G.selectedCard = null;
+    return;
+  }
+
+  G.selectedCard = idx;
+  el.classList.add('selected');
+  showPlayButton(idx);
+}
+
+function showPlayButton(cardIdx) {
+  showActionPanel('Spela valt kort?', `
+    <button class="btn btn-gold" onclick="playCard(${cardIdx})">Spela kortet ✓</button>
+    <button class="btn btn-muted" onclick="cancelCard()">Avbryt</button>
+  `);
+}
+
+function cancelCard() {
+  G.selectedCard = null;
+  document.querySelectorAll('.playing-card.selected').forEach(c => c.classList.remove('selected'));
+  hideActionPanel();
+}
+
+function playCard(cardIdx) {
+  socket.emit('play_card', { roomId: G.roomId, cardIndex: cardIdx }, (res) => {
+    if (!res.success) {
+      showToast(res.error);
+      return;
+    }
+    G.hand.splice(cardIdx, 1);
+    G.selectedCard = null;
+    hideActionPanel();
+    renderMyHand(false);
+  });
+}
+
+function renderOpponents() {
+  const container = document.getElementById('opponents-area');
+  container.innerHTML = '';
+
+  const opponents = G.players.filter(p => p.id !== G.myId);
+  opponents.forEach(p => {
+    // Sök budet med socketId, id eller namn
+    const bid = G.bids[p.id] ?? G.bids[p.socketId] ?? G.bids[p.name];
+    const tricks = G.tricks[p.id] ?? G.tricks[p.socketId] ?? G.tricks[p.name] ?? 0;
+    
+    // Kolla om det är denna spelares tur
+    const isBidding = G.phase === 'bidding' && G.currentBidder === p.id;
+    const isPlaying = G.phase === 'playing' && G.currentPlayer === p.id;
+    const isCurrent = isBidding || isPlaying;
+    const isDealer = p.name === G.dealerName;
+
+    const div = document.createElement('div');
+    div.className = 'opponent-card';
+    
+    if (isCurrent) {
+      div.style.border = '2px solid var(--gold)';
+      div.style.background = 'rgba(212,175,55,0.1)';
+    }
+    if (isDealer) {
+      div.style.outline = '1px solid rgba(212,175,55,0.3)';
+    }
+
+    const statusText = isBidding ? '🎯 Väljer bud...' 
+      : isPlaying ? '🃏 Spelar kort...' 
+      : '';
+
+    // Visa alltid budet om det finns
+    const bidText = bid !== undefined 
+      ? `Bud: <strong>${bid}</strong>` 
+      : (isBidding ? '–' : '–');
+
+    const activityText = isBidding ? '🎯 Väljer...' : isPlaying ? '🃏 Spelar...' : '';
+    div.innerHTML = `
+      <div class="opponent-name" style="${isCurrent ? 'color:var(--gold)' : ''}">${escHtml(p.name)}${isDealer ? ' 🎴' : ''}${activityText ? ' <span style="font-size:10px">' + activityText + '</span>' : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;margin-top:4px;font-size:11px;text-align:center">
+        <div>
+          <div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Bud</div>
+          <div style="color:${bid !== undefined ? 'var(--gold)' : 'var(--muted)'};font-weight:700;font-size:14px">${bid !== undefined ? bid : '–'}</div>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Stick</div>
+          <div style="color:#fff;font-weight:700;font-size:14px">${tricks}</div>
+        </div>
+        <div>
+          <div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Poäng</div>
+          <div style="color:var(--muted);font-weight:600;font-size:12px">${p.score || 0}</div>
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function renderTrickCard(playerId, playerName, card) {
+  const container = document.getElementById('trick-area');
+  const wrap = document.createElement('div');
+  wrap.className = 'trick-card-wrap slide-in';
+
+  const isRed = card.suit === 'hjärter' || card.suit === 'ruter';
+  const suitSymbol = getSuitSymbol(card.suit);
+
+  wrap.innerHTML = `
+    <div class="playing-card ${isRed ? 'red' : 'black'}" style="cursor:default">
+      <div class="card-corner-top"><div>${card.value}</div><div class="suit">${suitSymbol}</div></div>
+      <div class="card-center">${suitSymbol}</div>
+      <div class="card-corner-bot"><div>${card.value}</div><div class="suit">${suitSymbol}</div></div>
+    </div>
+    <div class="trick-player-name">${escHtml(playerName)}</div>
+  `;
+  container.appendChild(wrap);
+}
+
+function clearTrickArea() {
+  document.getElementById('trick-area').innerHTML = '';
+}
+
+// ── Givare-actions ────────────────────────────────────
+
+function showDealerActions() {
+  showActionPanel('Du ger korten', `
+    <button class="btn btn-gold" onclick="shuffleDeck()">🃏 Blanda korten</button>
+  `);
+}
+
+function showAfterShuffleActions() {
+  showActionPanel('Blanda igen eller kupera?', `
+    <button class="btn btn-muted" onclick="shuffleDeck()">Blanda igen</button>
+    <button class="btn btn-gold" onclick="cutDeck()">Kupera ✂️</button>
+  `);
+}
+
+function showDealButton() {
+  showActionPanel('Korten är kuperade!', `
+    <button class="btn btn-green" onclick="dealCards()">Dela ut korten 🃏</button>
+  `);
+}
+
+function shuffleDeck() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '🔀 Blandar…';
+  
+  // Animera kortbunten
+  const tableArea = document.getElementById('table-area');
+  let deckEl = document.getElementById('shuffle-deck-visual');
+  if (!deckEl) {
+    deckEl = document.createElement('div');
+    deckEl.id = 'shuffle-deck-visual';
+    deckEl.style.cssText = 'display:flex;justify-content:center;margin:8px 0;position:relative;height:90px';
+    for (let i = 4; i >= 0; i--) {
+      const c = document.createElement('div');
+      c.style.cssText = `position:absolute;width:56px;height:84px;background:linear-gradient(135deg,#1a3a8a,#0d2060);border:1px solid #2a4ab0;border-radius:8px;top:${i*2}px;left:calc(50% - 28px);box-shadow:0 2px 4px rgba(0,0,0,0.4)`;
+      deckEl.appendChild(c);
+    }
+    document.getElementById('trick-area').before(deckEl);
+  }
+  deckEl.classList.add('shuffle-anim');
+  setTimeout(() => deckEl.classList.remove('shuffle-anim'), 800);
+
+  socket.emit('shuffle_deck', { roomId: G.roomId }, (res) => {
+    if (!res.success) { btn.disabled = false; btn.textContent = '🃏 Blanda korten'; }
+  });
+}
+
+function cutDeck() {
+  // Animera kupering
+  const deckEl = document.getElementById('shuffle-deck-visual');
+  if (deckEl) {
+    const cards = deckEl.querySelectorAll('div');
+    const topCards = Array.from(cards).slice(0, 2);
+    topCards.forEach(c => {
+      c.style.transition = 'transform 0.3s ease';
+      c.style.transform = 'translateY(-25px)';
+      setTimeout(() => { c.style.transform = 'translateY(0)'; }, 400);
+    });
+  }
+  
+  socket.emit('cut_deck', { roomId: G.roomId }, (res) => {
+    if (!res.success) showToast('Fel vid kupering');
+  });
+}
+
+function dealCards() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Delar ut…';
+
+  socket.emit('deal_cards', { roomId: G.roomId }, (res) => {
+    if (!res.success) { btn.disabled = false; btn.textContent = 'Dela ut korten 🃏'; showToast('Fel vid utdelning'); }
+  });
+}
+
+// ── Budgivning ────────────────────────────────────────
+
+function updateBidderStatus() {
+  if (G.currentBidder === G.myId) {
+    showBidPanel();
+  } else {
+    const bidderName = G.currentBidderName || getName(G.currentBidder) || 'Motspelaren';
+    setStatus(`${bidderName} väljer antal stick…`);
+    hideActionPanel();
+  }
+}
+
+function showBidPanel() {
+  const forbidden = getForbiddenBid();
+  const myPlayer = G.players.find(p => p.id === G.myId);
+  const validBids = [];
+  
+  for (let i = 0; i <= G.numCards; i++) {
+    if (i === forbidden) continue;
+    if (i === 0 && myPlayer && myPlayer.consecutiveZeros >= 3) continue;
+    validBids.push(i);
+  }
+
+  let currentBidIdx = 0;
+  
+  const buttonsHtml = `
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:16px">
+      <button onclick="changeBid(-1)" style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
+      <div style="text-align:center">
+        <div id="bid-display" style="font-family:var(--f-display);font-size:56px;color:var(--gold);line-height:1;font-weight:900;min-width:80px">${validBids[0]}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">stick</div>
+      </div>
+      <button onclick="changeBid(+1)" style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
+    </div>
+    <button class="btn btn-gold" onclick="placeBid()">Bekräfta bud ✓</button>
+  `;
+
+  showActionPanel('Hur många stick tar du?', buttonsHtml);
+  setStatus('Din tur att bjuda!');
+  
+  // Spara valid bids globalt
+  G.validBids = validBids;
+  G.currentBidIdx = 0;
+}
+
+function changeBid(delta) {
+  if (!G.validBids) return;
+  G.currentBidIdx = Math.max(0, Math.min(G.validBids.length - 1, G.currentBidIdx + delta));
+  const display = document.getElementById('bid-display');
+  if (display) display.textContent = G.validBids[G.currentBidIdx];
+}
+
+function getForbiddenBid() {
+  // Räkna unika spelare som budat
+  const bidCount = G.players.filter(p => {
+    return G.bids[p.id] !== undefined || G.bids[p.socketId] !== undefined || G.bids[p.name] !== undefined;
+  }).length;
+  
+  // Bara blockera för siste spelaren
+  if (bidCount < G.players.length - 1) return null;
+  
+  // Summera alla lagda bud (en per spelare)
+  let currentSum = 0;
+  const counted = new Set();
+  for (const p of G.players) {
+    const bid = G.bids[p.id] ?? G.bids[p.socketId] ?? G.bids[p.name];
+    if (bid !== undefined && !counted.has(p.name)) {
+      currentSum += bid;
+      counted.add(p.name);
+    }
+  }
+  
+  // Det förbjudna budet är det som gör summan = numCards
+  const forbidden = G.numCards - currentSum;
+  
+  // Förbjudet bud måste vara inom giltigt intervall
+  if (forbidden < 0 || forbidden > G.numCards) return null;
+  return forbidden;
+}
+
+function placeBid() {
+  const bid = G.validBids ? G.validBids[G.currentBidIdx] : 0;
+  socket.emit('place_bid', { roomId: G.roomId, bid }, (res) => {
+    if (!res.success) {
+      showToast(res.error);
+      return;
+    }
+    G.bids[G.myId] = bid;
+    hideActionPanel();
+    setStatus(`Du bjuder ${bid} stick`);
+    renderOpponents();
+  });
+}
+
+// ── Spelstatus ────────────────────────────────────────
+
+function updatePlayStatus() {
+  if (G.currentPlayer === G.myId) {
+    setStatus('Din tur – välj ett kort att spela!');
+    renderMyHand(G.isOneCardRound);
+  } else {
+    const playerName = G.currentPlayerName || getName(G.currentPlayer) || 'Motspelaren';
+    setStatus(`${playerName} spelar ett kort…`);
+    hideActionPanel();
+  }
+}
+
+function updateMyInfo() {
+  const bid = G.bids[G.myId] ?? G.bids[G.myName];
+  const tricks = G.tricks[G.myId] ?? G.tricks[G.myName] ?? 0;
+  const myBidEl = document.getElementById('my-bid-info');
+  if (bid !== undefined) {
+    myBidEl.innerHTML = `Bud: <strong style="color:var(--gold)">${bid}</strong>`;
+  } else {
+    myBidEl.textContent = '';
+  }
+  document.getElementById('my-tricks-info').textContent = `Stick: ${tricks}`;
+}
+
+function updateTopbar() {
+  const roundNum = G.roundIndex + 1;
+  document.getElementById('round-info').textContent = `Omgång ${roundNum}/${G.totalRounds} – ${G.numCards} kort`;
+  const dealerName = G.players.find(p => p.id === G.dealer)?.name || '–';
+  document.getElementById('dealer-info').textContent = `Givare: ${dealerName}`;
+}
+
+// ── Scoreboard ────────────────────────────────────────
+
+function renderScoreboard() {
+  if (!G.scores || G.scores.length === 0) return;
+  const container = document.getElementById('scoreboard-content');
+
+  const maxRounds = Math.max(...G.scores.map(s => s.rounds.length));
+  let html = '<table class="score-table"><thead><tr><th>Spelare</th>';
+  for (let i = 1; i <= maxRounds; i++) html += `<th>R${i}</th>`;
+  html += '<th>Total</th></tr></thead><tbody>';
+
+  for (const player of G.scores) {
+    const total = player.rounds.reduce((sum, r) => sum + r.points, 0);
+    html += `<tr><td style="text-align:left;font-weight:600">${escHtml(player.name)}</td>`;
+    for (const round of player.rounds) {
+      if (round.success) {
+        html += `<td class="success-cell">${round.points}</td>`;
+      } else {
+        html += `<td><div class="plump-cell">${round.bid}</div></td>`;
+      }
+    }
+    for (let i = player.rounds.length; i < maxRounds; i++) html += '<td>–</td>';
+    html += `<td class="total-row">${total}</td></tr>`;
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function toggleRules() {
+  const panel = document.getElementById('rules-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleScoreboard() {
+  renderScoreboard();
+  document.getElementById('scoreboard').classList.toggle('show');
+}
+
+// ── Omgångsresultat ───────────────────────────────────
+
+function showRoundResult(results) {
+  document.getElementById('result-title').textContent = `Omgång ${G.roundIndex + 1} klar!`;
+  const rows = results.map(r => `
+    <div class="result-row">
+      <span class="result-name">${escHtml(r.playerName)}</span>
+      <span class="result-bid">Bud: ${r.bid} / Fick: ${r.tricks}</span>
+      <span class="result-points ${r.success ? 'success' : 'plump'}">
+        ${r.success ? '+' + r.points : '💀 Plump'}
+      </span>
+    </div>
+  `).join('');
+  document.getElementById('result-rows').innerHTML = rows;
+  document.getElementById('round-result').classList.add('show');
+}
+
+function closeRoundResult() {
+  document.getElementById('round-result').classList.remove('show');
+}
+
+// ── Hjälpfunktioner ───────────────────────────────────
+
+function showActionPanel(title, content) {
+  document.getElementById('action-panel').style.display = 'block';
+  document.getElementById('action-title').textContent = title;
+  document.getElementById('action-content').innerHTML = content;
+}
+
+function hideActionPanel() {
+  document.getElementById('action-panel').style.display = 'none';
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// Robust namnuppslag - använder cache + players
+function getName(socketId) {
+  if (!socketId) return 'Okänd';
+  if (G.nameCache[socketId]) return G.nameCache[socketId];
+  const p = G.players.find(p => p.id === socketId || p.socketId === socketId);
+  if (p) {
+    G.nameCache[socketId] = p.name;
+    return p.name;
+  }
+  return '';
+}
+
+// Bygg namncache från spelarlista
+function buildNameCache() {
+  G.players.forEach(p => {
+    if (p.id) G.nameCache[p.id] = p.name;
+    if (p.socketId) G.nameCache[p.socketId] = p.name;
+  });
+}
+
+// Kortsortering
+const SUIT_ORDER = { 'spader': 0, 'hjärter': 1, 'ruter': 2, 'klöver': 3 };
+const VALUE_ORDER = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'Kn':11,'D':12,'K':13,'E':14 };
+let G_originalHand = null; // Spara original-ordningen
+
+function sortHand(mode) {
+  if (!G.hand || G.hand.length === 0) return;
+  
+  if (mode === 'auto') {
+    // Spara original om vi inte redan gjort det
+    if (!G_originalHand) G_originalHand = [...G.hand];
+    
+    // Sortera efter färg sedan värde
+    G.hand = [...G.hand].sort((a, b) => {
+      const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+      if (suitDiff !== 0) return suitDiff;
+      return VALUE_ORDER[b.value] - VALUE_ORDER[a.value]; // Högt till lågt
+    });
+  } else if (mode === 'reset') {
+    // Återställ originalordning
+    if (G_originalHand) {
+      G.hand = [...G_originalHand];
+      G_originalHand = null;
+    }
+  }
+  
+  renderMyHand(G.isOneCardRound);
+}
+
+// Nollställ original när ny omgång börjar
+function resetHandSort() {
+  G_originalHand = null;
+}
+
+function getBiddingOrderFromPlayers() {
+  const dealerIdx = G.players.findIndex(p => p.id === G.dealer);
+  if (dealerIdx === -1) return G.players.map(p => p.id);
+  const order = [];
+  for (let i = 1; i <= G.players.length; i++) {
+    order.push(G.players[(dealerIdx + i) % G.players.length].id);
+  }
+  return order;
+}
+
+function getSuitSymbol(suit) {
+  return { spader: '♠', hjärter: '♥', ruter: '♦', klöver: '♣' }[suit] || suit;
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+const WINNER_QUOTES = [
+  'förloraren har alltid en bra förklaring.',
+  'det är helt okej att skylla på dåliga kort.',
+  'en plump aldrig glöms bort av den som gav den.',
+  'den som skrattar sist skrattar bäst – men den som skrattar först skrattar mest.',
+  'revansch är en mänsklig rättighet.',
+  'det finns inga dåliga spelare, bara dålig tur.',
+  'vinnaren aldrig behöver diska.',
+  'förloraren alltid erbjuder sig att spela en till omgång.',
+  'detta spel fungerar utmärkt som ursäkt för att slippa se på TV.',
+  'en sann vän låter dig plumpa utan att gnugga in det.',
+  'man alltid kan skylla på uppkopplingen.',
+  'kortspel på semestern är lagstadgat i vissa länder.',
+  'den som protesterar mest mot reglerna förlorar nästan alltid.',
+  'en dålig förlorare är underhållning för alla andra.',
+  'det alltid finns en till omgång innan sänggåendet.',
+  'inga relationer har stärkts av att vinna med för stor marginal.',
+  'den som räknar poäng noggrannast förlorar ändå.',
+  'Plump är det enda spelet där alla kan ha rätt och fel samtidigt.',
+  'barn slår föräldrar oftare än man vill erkänna.',
+  'det är fullt acceptabelt att spela på tåget, bussen och tandläkarens väntrum.',
+  'den som hittar på egna regler brukar förlora på dem.',
+  'man alltid överskattar sina egna chanser i 1-kortsomgångarna.',
+  'ingen någonsin frivilligt slutar efter bara en omgång.'
+];
+
+function launchConfetti() {
+  const colors = ['#d4af37','#f0d060','#27ae60','#e74c3c','#3498db','#fff'];
+  for (let i = 0; i < 60; i++) {
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:fixed;
+      left:${Math.random()*100}vw;
+      top:-20px;
+      width:${6+Math.random()*8}px;
+      height:${6+Math.random()*8}px;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      border-radius:${Math.random()>0.5?'50%':'2px'};
+      z-index:200;
+      animation: confettiFall ${2+Math.random()*3}s ease-in ${Math.random()*2}s forwards;
+      pointer-events:none;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+  }
+}
+
+function showWinnerScreen(data) {
+  const quote = WINNER_QUOTES[Math.floor(Math.random() * WINNER_QUOTES.length)];
+  
+  document.getElementById('winner-name').textContent = '🏆 ' + data.winner.playerName + ' vinner!';
+  document.getElementById('winner-score').textContent = data.winner.score + ' poäng totalt';
+  
+  // Lägg till slumpmässig citat
+  const quoteEl = document.getElementById('winner-quote');
+  if (quoteEl) {
+    quoteEl.textContent = 'Hoppas du hade kul!? Och kom ihåg att ' + quote;
+  }
+  
+  const scoresHtml = data.finalScores
+    .sort((a, b) => b.score - a.score)
+    .map((p, i) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.07)">
+      <span style="color:${i === 0 ? 'var(--gold)' : '#fff'}">${i+1}. ${escHtml(p.playerName)}</span>
+      <span style="color:${i === 0 ? 'var(--gold)' : 'var(--muted)'};font-weight:700">${p.score} p</span>
+    </div>`).join('');
+  
+  document.getElementById('final-scores').innerHTML = scoresHtml;
+  const ws = document.getElementById('winner-screen');
+  ws.style.display = 'flex';
+  
+  // Konfetti!
+  launchConfetti();
+  setTimeout(launchConfetti, 1500);
+}
+
+function playAgain() {
+  // Rensa sessionStorage och gå tillbaka till lobbyn
+  const roomId = G.roomId;
+  sessionStorage.removeItem('plumpState');
+  window.location.href = '/';
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
