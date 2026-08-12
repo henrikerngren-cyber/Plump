@@ -223,12 +223,11 @@ io.on('connection', (socket) => {
       room.currentDealerName = room.players[dealerIdx].name;
       room.currentDealer = room.players[dealerIdx].socketId;
 
+      room.playersReadyToStart = 0; // räkna återanslutna spelare
       await saveRoom(room);
       callback({ success: true });
       io.to(roomId).emit('game_starting', sanitizeRoom(room));
-      
-      // Starta första omgången
-      await startRound(room, roomId);
+      // startRound körs när alla spelare återanslutit via rejoin_game
     } catch (err) {
       console.error('start_game fel:', err);
       callback({ success: false, error: 'Serverfel.' });
@@ -287,6 +286,16 @@ io.on('connection', (socket) => {
         }
       }
 
+      // Synka currentDealer om denna spelare är givaren
+      if (room.currentDealerName === player.name) {
+        room.currentDealer = socket.id;
+      }
+
+      // Om spelet precis startats, räkna återanslutna spelare
+      if (room.status === 'playing' && room.deckState === undefined && room.playersReadyToStart !== undefined) {
+        room.playersReadyToStart = (room.playersReadyToStart || 0) + 1;
+      }
+
       await saveRoom(room);
       socket.join(roomId);
       socket.roomId = roomId;
@@ -305,6 +314,14 @@ io.on('connection', (socket) => {
         roundIndex: room.currentRoundIndex,
         totalRounds: room.roundSequence?.length || 0
       });
+
+      // Starta första omgången när alla spelare återanslutit
+      if (room.status === 'playing' && room.deckState === undefined &&
+          room.playersReadyToStart >= room.players.length) {
+        room.playersReadyToStart = undefined; // återställ
+        await saveRoom(room);
+        await startRound(room, roomId);
+      }
     } catch (err) {
       console.error('rejoin_game fel:', err);
       callback({ success: false, error: 'Serverfel.' });
